@@ -1070,6 +1070,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "label": {
           "name": "label",
           "type": "varchar(256)",
@@ -2951,6 +2957,6 @@
     "tables": {},
     "columns": {}
   },
-  "id": "1772b995-fcea-4a0a-ae35-a94e0704ad30",
+  "id": "6b397b78-14fd-4375-965c-54c177f55558",
   "prevId": "00000000-0000-0000-0000-000000000000"
 }

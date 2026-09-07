@@ -35,6 +35,9 @@ export const entryModel = pgTable(
             onDelete: "set null",
             onUpdate: "cascade",
         }),
+        idempotencyKey: varchar("idempotency_key", {
+            length: 256,
+        }),
         label: varchar("label", {
             length: 256,
         }).notNull(),

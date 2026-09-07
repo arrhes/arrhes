@@ -1,5 +1,6 @@
 import * as v from "valibot"
 import { validate } from "./validate.js"
+import { defaultUserSessionCookieMaxAge } from "./variables.js"
 
 enum Env {
     development = "development",
@@ -17,6 +18,10 @@ const envSchema = v.object({
     CORS_ORIGIN: v.string(),
     COOKIES_DOMAIN: v.string(),
     COOKIES_KEY: v.optional(v.string(), ""),
+    USER_SESSION_COOKIE_MAX_AGE: v.optional(
+        v.pipe(v.string(), v.transform(Number), v.number(), v.integer(), v.minValue(1)),
+        String(defaultUserSessionCookieMaxAge),
+    ),
 
     API_BASE_URL: v.string(),
     WEBSITE_BASE_URL: v.string(),

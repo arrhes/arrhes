@@ -25,6 +25,7 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       COOKIES_DOMAIN: localhost
       COOKIES_KEY: ${COOKIES_KEY:?COOKIES_KEY is required}
+      USER_SESSION_COOKIE_MAX_AGE: ${USER_SESSION_COOKIE_MAX_AGE:-31536000}
       API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
       WEBSITE_BASE_URL: ${WEBSITE_BASE_URL:-https://comptasse.com}
       DASHBOARD_BASE_URL: ${DASHBOARD_BASE_URL:-http://localhost:5173}

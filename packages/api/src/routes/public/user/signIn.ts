@@ -11,7 +11,7 @@ import { registerRoute } from "../../../utilities/registerRoute.js"
 import { response } from "../../../utilities/response.js"
 import { insertOne } from "../../../utilities/sql/insertOne.js"
 import { selectOne } from "../../../utilities/sql/selectOne.js"
-import { getCookieSecurityOptions, productName, userSessionCookieMaxAge } from "../../../utilities/variables.js"
+import { getCookieSecurityOptions, productName } from "../../../utilities/variables.js"
 
 export const signInRoute = registerRoute(signInRouteDefinition, async (c) => {
     const body = await validateBodyMiddleware({
@@ -43,7 +43,7 @@ export const signInRoute = registerRoute(signInRouteDefinition, async (c) => {
             id: generateId(),
             idUser: user.id,
             isActive: true,
-            expiresAt: new Date(Date.now() + userSessionCookieMaxAge).toISOString(),
+            expiresAt: new Date(Date.now() + c.var.env.USER_SESSION_COOKIE_MAX_AGE * 1000).toISOString(),
             ip: getRemoteAddress({
                 context: c,
             }),
@@ -67,7 +67,7 @@ export const signInRoute = registerRoute(signInRouteDefinition, async (c) => {
                 secret: c.var.env.COOKIES_KEY,
             }),
             options: {
-                maxAge: userSessionCookieMaxAge,
+                maxAge: c.var.env.USER_SESSION_COOKIE_MAX_AGE,
                 httpOnly: true,
                 ...cookieSecurity,
                 domain: cookieDomain,
@@ -81,7 +81,7 @@ export const signInRoute = registerRoute(signInRouteDefinition, async (c) => {
             name: `${productName}_${"is_auth"}`,
             value: String(true),
             options: {
-                maxAge: userSessionCookieMaxAge,
+                maxAge: c.var.env.USER_SESSION_COOKIE_MAX_AGE,
                 httpOnly: false,
                 ...cookieSecurity,
                 domain: cookieDomain,

@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest"
 import {
+    defaultUserSessionCookieMaxAge,
     getCookieSecurityOptions,
     productName,
     storageFileExpiresIn,
-    userSessionCookieMaxAge,
     verificationTokenLifetime,
 } from "#/utilities/variables.js"
 
 describe("variables", () => {
     describe("constants", () => {
-        it("userSessionCookieMaxAge is 1 year in seconds", () => {
-            expect(userSessionCookieMaxAge).toBe(60 * 60 * 24 * 365)
+        it("defaultUserSessionCookieMaxAge is 1 year in seconds", () => {
+            expect(defaultUserSessionCookieMaxAge).toBe(60 * 60 * 24 * 365)
         })
 
         it("verificationTokenLifetime is 1 day in milliseconds", () => {

@@ -1,4 +1,5 @@
 export * from "./computeSHA256.js"
+export * from "./describeSchema.js"
 export * from "./generateId.js"
 export * from "./organizationUsageLimits.js"
 export * from "./routeDefinition.js"

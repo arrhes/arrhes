@@ -31,6 +31,15 @@ export const readOneScenarioRouteDefinition = routeDefinition({
             ),
             sample: v.object({
                 params: v.record(v.string(), v.unknown()),
+                balances: v.optional(
+                    v.array(
+                        v.object({
+                            number: v.string(),
+                            label: v.string(),
+                            balance: v.number(),
+                        }),
+                    ),
+                ),
                 entries: v.array(
                     v.object({
                         label: v.string(),

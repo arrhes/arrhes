@@ -17,6 +17,12 @@ export const executeScenarioRouteDefinition = routeDefinition({
             idJournal: journalSchema.entries.id,
             date: v.optional(yearSchema.entries.startingAt),
             params: v.optional(v.record(v.string(), v.unknown(), "Les paramètres doivent être un objet")),
+            // Remplace l'écriture générée précédemment par ce scénario (même
+            // année + journal) au lieu d'en créer une nouvelle. Utilisé par
+            // les scénarios d'ouverture et de clôture ; ignoré par les
+            // scénarios à paramètres, qui créent toujours de nouvelles
+            // écritures.
+            isIdempotent: v.optional(v.boolean("Doit être un booléen"), true),
         }),
         return: v.object({
             entries: v.array(

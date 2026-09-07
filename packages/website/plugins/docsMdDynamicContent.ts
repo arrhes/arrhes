@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import {
+    buildScenarioEntries,
+    describeScenarioParams,
+    type ScenarioDefinition,
+    scenarioCatalog,
+} from "@comptasse/application-metadata"
+import {
     mdCode,
     mdCodeBlock,
     mdDefinition,
@@ -42,14 +48,6 @@ interface ScenarioExample {
     rows: string[][]
 }
 
-interface ScenarioData {
-    id: string
-    title: string
-    description: string
-    examples: ScenarioExample[]
-    accountNumbers: string[]
-}
-
 interface GlossaryTermData {
     slug: string
     term: string
@@ -79,7 +77,16 @@ export const DOC_NAVIGATION_PATH = "/documentation/sommaire"
  * `.md` URL so LLM agents can crawl the documentation from a single entry point.
  */
 export function generateNavigationMarkdown(baseUrl = ""): string {
-    const sections = new Map<string, Map<string, Array<{ label: string; path: string }>>>()
+    const sections = new Map<
+        string,
+        Map<
+            string,
+            Array<{
+                label: string
+                path: string
+            }>
+        >
+    >()
 
     for (const entry of DOC_PAGE_MANIFEST) {
         let groups = sections.get(entry.section)
@@ -111,6 +118,15 @@ export function generateNavigationMarkdown(baseUrl = ""): string {
             for (const page of pages) {
                 lines.push(`- [${page.label}](${docUrl(baseUrl, page.path)})`)
             }
+            // Dynamic pages: list every accounting scenario right after the
+            // scenarios index so agents can jump directly to one scenario.
+            if (section === "Comptabilité" && group === "Scénarios") {
+                for (const definition of Object.values(scenarioCatalog)) {
+                    lines.push(
+                        `- [${definition.title}](${docUrl(baseUrl, `/documentation/comptabilité/ressources/scénarios/${definition.slug}.md`)})`,
+                    )
+                }
+            }
             lines.push("")
         }
     }
@@ -125,10 +141,6 @@ function withNavigationLink(markdown: string, baseUrl: string): string {
 
 function readAccountsData(pkgRoot: string): string {
     return readFileSync(resolve(pkgRoot, "src/features/docs/accounting/resources/accounts/accountsData.ts"), "utf-8")
-}
-
-function readScenariosData(pkgRoot: string): string {
-    return readFileSync(resolve(pkgRoot, "src/features/docs/accounting/resources/scenarios/scenariosData.ts"), "utf-8")
 }
 
 function readGlossaryData(pkgRoot: string): string {
@@ -203,63 +215,6 @@ function findAccountChunk(source: string, slug: string): string | undefined {
         }
     }
     return undefined
-}
-
-function findScenarioChunk(source: string, id: string): string | undefined {
-    const chunks = source.split(/(?=\bdefineScenario\()/)
-    for (const chunk of chunks) {
-        if (!/^\s*defineScenario\s*\(\s*\{/.test(chunk)) continue
-        const idMatch = chunk.match(/\bid\s*:\s*"([^"]+)"/)
-        if (idMatch?.[1] === id) {
-            return chunk
-        }
-    }
-    return undefined
-}
-
-function parseScenarioChunk(chunk: string): ScenarioData {
-    const id = extractStringValue(chunk, "id")
-    const title = extractStringValue(chunk, "title")
-    const description = extractStringValue(chunk, "description")
-
-    const examples: ScenarioExample[] = []
-    const examplesBlockMatch = chunk.match(/examples:\s*\[([\s\S]*?)\]\s*,\s*accountNumbers/)
-    if (examplesBlockMatch) {
-        const examplesBlock = examplesBlockMatch[1]
-        const exampleMatches = examplesBlock.matchAll(
-            /\{\s*description:\s*\n?\s*"([\s\S]*?)"\s*,\s*entry:\s*\{[\s\S]*?\},?\s*\}/g,
-        )
-        for (const exampleMatch of exampleMatches) {
-            const rows: string[][] = []
-            const exampleObject = exampleMatch[0]
-            const rowMatches = exampleObject.matchAll(
-                /\[\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,?\s*\]/g,
-            )
-            for (const rowMatch of rowMatches) {
-                rows.push([
-                    rowMatch[1],
-                    rowMatch[2],
-                    rowMatch[3],
-                    rowMatch[4],
-                ])
-            }
-
-            examples.push({
-                description: exampleMatch[1],
-                rows,
-            })
-        }
-    }
-
-    const accountNumbers = extractStringArray(chunk, "accountNumbers")
-
-    return {
-        id,
-        title,
-        description,
-        examples,
-        accountNumbers,
-    }
 }
 
 function findGlossaryChunk(source: string, slug: string): string | undefined {
@@ -389,25 +344,113 @@ export function generateAccountMarkdown(pkgRoot: string, slug: string, baseUrl =
     return withNavigationLink(lines.join("\n"), baseUrl)
 }
 
-export function generateScenarioMarkdown(pkgRoot: string, id: string, baseUrl = ""): string | null {
-    const source = readScenariosData(pkgRoot)
-    const accountsSource = readAccountsData(pkgRoot)
-    const chunk = findScenarioChunk(source, id)
-    if (!chunk) return null
+function buildScenarioExamples(definition: ScenarioDefinition): ScenarioExample[] {
+    const examples: ScenarioExample[] = []
+    for (const docExample of definition.docExamples) {
+        const drafts = buildScenarioEntries(definition, docExample)
+        for (const draft of drafts) {
+            const description =
+                drafts.length > 1 ? `${docExample.description} (${draft.label})` : docExample.description
+            examples.push({
+                description,
+                rows: draft.lines.map((line) => [
+                    line.number,
+                    line.label,
+                    line.debit,
+                    line.credit,
+                ]),
+            })
+        }
+    }
+    return examples
+}
 
-    const scenario = parseScenarioChunk(chunk)
+function collectScenarioAccountNumbers(definition: ScenarioDefinition): string[] {
+    const numbers: string[] = []
+    for (const docExample of definition.docExamples) {
+        for (const draft of buildScenarioEntries(definition, docExample)) {
+            for (const line of draft.lines) {
+                if (!numbers.includes(line.number)) numbers.push(line.number)
+            }
+        }
+    }
+    return numbers
+}
+
+function buildScenarioExecutionSection(definition: ScenarioDefinition, baseUrl: string): string {
+    const lines: string[] = []
+    lines.push("## Exécution")
+    lines.push("")
+    lines.push("```http")
+    if (definition.mode === "balances") {
+        lines.push(`POST /organizations/:idOrganization/years/:idYear/scenarios/${definition.slug}`)
+        lines.push("")
+        lines.push(
+            definition.balancesSource === "previousYear"
+                ? "// Les soldes de bilan de l'exercice précédent sont lus automatiquement."
+                : "// Les soldes des comptes de gestion de l'exercice sont lus automatiquement.",
+        )
+        lines.push('{ "idYear": "<idYear>", "idJournal": "<idJournal>" }')
+    } else {
+        lines.push(`POST /organizations/:idOrganization/years/:idYear/scenarios/${definition.slug}`)
+        lines.push("")
+        lines.push('{ "idYear": "<idYear>", "idJournal": "<idJournal>", "params": { ... } }')
+    }
+    lines.push("```")
+    lines.push("")
+    lines.push("```sh")
+    lines.push(
+        `comptasse scenarios run ${definition.slug} --year <id> --journal <id>${definition.mode === "params" ? " --data '<json>'" : ""}`,
+    )
+    lines.push("```")
+    lines.push("")
+    lines.push(`Référence complète des routes : [Référence API](${docUrl(baseUrl, "/documentation/guide/référence-api")})`)
+    lines.push("")
+    return lines.join("\n")
+}
+
+export function generateScenarioMarkdown(pkgRoot: string, id: string, baseUrl = ""): string | null {
+    const definition = scenarioCatalog[id]
+    if (!definition) return null
+
+    const accountsSource = readAccountsData(pkgRoot)
     const accountLabels = buildAccountLabelMap(accountsSource)
+    const examples = buildScenarioExamples(definition)
+    const accountNumbers = collectScenarioAccountNumbers(definition)
+    const params = describeScenarioParams(definition.paramsSchema)
     const lines: string[] = []
 
-    lines.push(`# ${scenario.title}`)
+    lines.push(`# ${definition.title}`)
     lines.push("")
-    lines.push(scenario.description)
+    lines.push(definition.description)
     lines.push("")
 
-    if (scenario.examples.length > 0) {
+    if (definition.mode === "balances") {
+        lines.push(
+            definition.balancesSource === "previousYear"
+                ? "> Scénario piloté par les données : les soldes de bilan de l'exercice précédent sont agrégés automatiquement au moment de l'exécution."
+                : "> Scénario piloté par les données : les soldes des comptes de gestion de l'exercice sont agrégés automatiquement au moment de l'exécution.",
+        )
+        lines.push("")
+    }
+
+    if (params.length > 0) {
+        lines.push("## Paramètres")
+        lines.push("")
+        lines.push("| Nom | Type | Requis | Choix | Défaut |")
+        lines.push("|---|---|---|---|---|")
+        for (const param of params) {
+            lines.push(
+                `| ${param.name} | ${param.type} | ${param.required ? "oui" : "non"} | ${param.choices?.join(", ") ?? "-"} | ${param.default ?? "-"} |`,
+            )
+        }
+        lines.push("")
+    }
+
+    if (examples.length > 0) {
         lines.push("## Exemples")
         lines.push("")
-        for (const example of scenario.examples) {
+        for (const example of examples) {
             lines.push(`### ${example.description}`)
             lines.push("")
             lines.push("| Compte | Libellé | Débit | Crédit |")
@@ -419,16 +462,18 @@ export function generateScenarioMarkdown(pkgRoot: string, id: string, baseUrl = 
         }
     }
 
-    if (scenario.accountNumbers.length > 0) {
+    if (accountNumbers.length > 0) {
         lines.push("## Comptes concernés")
         lines.push("")
-        for (const number of scenario.accountNumbers) {
+        for (const number of accountNumbers) {
             const label = accountLabels.get(number)
             const text = label ? `${number} ${label}` : number
             lines.push(`- [${text}](${docUrl(baseUrl, `/documentation/comptabilité/ressources/comptes/${number}`)})`)
         }
         lines.push("")
     }
+
+    lines.push(buildScenarioExecutionSection(definition, baseUrl))
 
     return withNavigationLink(lines.join("\n"), baseUrl)
 }
@@ -501,9 +546,8 @@ export function listAccountSlugs(pkgRoot: string): string[] {
     return Array.from(source.matchAll(/defineAccount\(\s*"([^"]+)"/g)).map((m) => m[1])
 }
 
-export function listScenarioIds(pkgRoot: string): string[] {
-    const source = readScenariosData(pkgRoot)
-    return Array.from(source.matchAll(/\bid\s*:\s*"([^"]+)"/g)).map((m) => m[1])
+export function listScenarioIds(_pkgRoot: string): string[] {
+    return Object.keys(scenarioCatalog)
 }
 
 function splitArrayElements(content: string): string[] {
@@ -840,7 +884,9 @@ export function generateStaticDocPageMarkdown(pkgRoot: string, path: string, bas
     const docSourcesMatch = source.match(/<DocSources[\s\S]*?sources\s*=\s*\{\s*\[([\s\S]*?)\]\s*\}/)
     if (docSourcesMatch) {
         const items: string[] = []
-        for (const m of docSourcesMatch[1].matchAll(/\{\s*label\s*:\s*"([^"]+)"\s*,\s*url\s*:\s*"([^"]+)"\s*,?\s*\}/g)) {
+        for (const m of docSourcesMatch[1].matchAll(
+            /\{\s*label\s*:\s*"([^"]+)"\s*,\s*url\s*:\s*"([^"]+)"\s*,?\s*\}/g,
+        )) {
             items.push(mdLink(m[2], m[1]))
         }
         if (items.length > 0) {
@@ -894,14 +940,13 @@ export function generateStaticDocPageMarkdown(pkgRoot: string, path: string, bas
 
     if (path === "/documentation/comptabilité/ressources/scénarios") {
         const items: string[] = []
-        const scenariosSource = readScenariosData(pkgRoot)
-        const chunks = scenariosSource.split(/(?=\bdefineScenario\()/)
-        for (const chunk of chunks) {
-            const idMatch = chunk.match(/\bid\s*:\s*"([^"]+)"/)
-            const titleMatch = chunk.match(/\btitle\s*:\s*"([^"]+)"/)
-            if (idMatch && titleMatch) {
-                items.push(mdLink(`/documentation/comptabilité/ressources/scénarios/${idMatch[1]}`, titleMatch[1]))
-            }
+        for (const definition of Object.values(scenarioCatalog)) {
+            items.push(
+                mdLink(
+                    `/documentation/comptabilité/ressources/scénarios/${definition.slug}`,
+                    `${definition.title} (${definition.slug})`,
+                ),
+            )
         }
         markdown += mdSection("Scénarios", mdList(items))
     }

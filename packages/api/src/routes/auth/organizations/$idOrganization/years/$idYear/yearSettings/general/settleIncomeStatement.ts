@@ -1,4 +1,9 @@
-import { generateId, models, settleIncomeStatementRouteDefinition } from "@comptasse/application-metadata"
+import {
+    clotureScenarioSlug,
+    generateId,
+    models,
+    settleIncomeStatementRouteDefinition,
+} from "@comptasse/application-metadata"
 import { and, eq } from "drizzle-orm"
 import { checkAuthMiddleware } from "../../../../../../../../middlewares/checkAuthMiddleware.js"
 import { requireOrganizationMiddleware } from "../../../../../../../../middlewares/requireOrganizationMiddleware.js"
@@ -6,6 +11,7 @@ import { validateBodyMiddleware } from "../../../../../../../../middlewares/vali
 import { apiFactory } from "../../../../../../../../utilities/apiFactory.js"
 import { Exception } from "../../../../../../../../utilities/exception.js"
 import { response } from "../../../../../../../../utilities/response.js"
+import { selectBalancesByIdAccount } from "../../../../../../../../utilities/scenarios/accountBalances.js"
 import { deleteMany } from "../../../../../../../../utilities/sql/deleteMany.js"
 import { insertMany } from "../../../../../../../../utilities/sql/insertMany.js"
 import { insertOne } from "../../../../../../../../utilities/sql/insertOne.js"
@@ -33,7 +39,10 @@ export const settleIncomeStatementRoute = apiFactory
         })
 
         await c.var.clients.sql.transaction(async (tx) => {
-            // Delete any previous income-statement closing entries for this journal+year
+            // Idempotency: replace the previously generated closing entry for
+            // this year + journal (matched by idempotency key, not by journal
+            // contents, so manually created entries in the same journal are
+            // preserved).
             await deleteMany({
                 database: tx,
                 table: models.entry,
@@ -42,18 +51,7 @@ export const settleIncomeStatementRoute = apiFactory
                         eq(table.idOrganization, idOrganization),
                         eq(table.idYear, body.idYear),
                         eq(table.idJournal, body.idJournalClosing),
-                    ),
-            })
-
-            // Fetch all income-statement entry lines for this year
-            const entryLines = await selectMany({
-                database: tx,
-                table: models.entryLine,
-                where: (table) =>
-                    and(
-                        eq(table.idOrganization, idOrganization),
-                        eq(table.idYear, body.idYear),
-                        eq(table.isComputedForIncomeStatementReport, true),
+                        eq(table.idempotencyKey, clotureScenarioSlug),
                     ),
             })
 
@@ -69,19 +67,21 @@ export const settleIncomeStatementRoute = apiFactory
                     ),
             })
 
+            // Aggregate income-statement balances per account (lines flagged
+            // for the income statement report exclude the closing entry
+            // itself, making this idempotent).
+            const balanceByIdAccount = await selectBalancesByIdAccount({
+                database: tx,
+                idOrganization,
+                idYear: body.idYear,
+                lineFlag: "isComputedForIncomeStatementReport",
+            })
+
             // Build closing lines: reverse each account balance (skip class/2-digit accounts)
             const closingLines: Array<typeof models.entryLine.$inferInsert> = []
 
             for (const account of accounts) {
-                    let totalDebit = 0
-                let totalCredit = 0
-                for (const line of entryLines) {
-                    if (line.idAccount !== account.id) continue
-                    totalDebit += Number(line.debit)
-                    totalCredit += Number(line.credit)
-                }
-
-                const algebraicBalance = totalDebit - totalCredit
+                const algebraicBalance = balanceByIdAccount.get(account.id) ?? 0
                 if (Math.abs(algebraicBalance) < 0.01) continue
 
                 closingLines.push({
@@ -128,6 +128,7 @@ export const settleIncomeStatementRoute = apiFactory
                     idYear: body.idYear,
                     idJournal: body.idJournalClosing,
                     idFile: null,
+                    idempotencyKey: clotureScenarioSlug,
                     label: "Solde des comptes de gestion",
                     date: year.endingAt,
                     createdAt: new Date().toISOString(),

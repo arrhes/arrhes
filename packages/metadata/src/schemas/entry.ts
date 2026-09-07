@@ -10,6 +10,11 @@ export const entrySchema = v.object({
     idYear: v.nonNullable(idSchema, "Ce champ est requis"),
     idJournal: v.nullable(idSchema),
     idFile: v.nullable(idSchema),
+    idempotencyKey: v.nullable(
+        varcharSchema({
+            maxLength: 256,
+        }),
+    ),
     label: v.nonNullable(
         varcharSchema({
             maxLength: 256,
@@ -29,6 +34,7 @@ export const entrySchemaReturn = v.pick(entrySchema, [
     "idYear",
     "idJournal",
     "idFile",
+    "idempotencyKey",
     "label",
     "date",
     "createdAt",

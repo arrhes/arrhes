@@ -1,4 +1,5 @@
 import {
+    buildScenarioEntries,
     scenarioCatalog,
     type ScenarioDefinition,
 } from "@comptasse/application-metadata"
@@ -43,7 +44,7 @@ function formatAmountsForAccountLines(rows: Array<{ debit: string; credit: strin
 function buildExamples(definition: ScenarioDefinition): ScenarioExample[] {
     const examples: ScenarioExample[] = []
     for (const docExample of definition.docExamples) {
-        const drafts = definition.buildEntries(docExample.params)
+        const drafts = buildScenarioEntries(definition, docExample)
         for (const draft of drafts) {
             const description =
                 drafts.length > 1 ? `${docExample.description} (${draft.label})` : docExample.description
@@ -67,7 +68,7 @@ function buildExamples(definition: ScenarioDefinition): ScenarioExample[] {
 function collectAccountNumbers(definition: ScenarioDefinition): string[] {
     const numbers: string[] = []
     for (const docExample of definition.docExamples) {
-        for (const draft of definition.buildEntries(docExample.params)) {
+        for (const draft of buildScenarioEntries(definition, docExample)) {
             for (const line of draft.lines) {
                 if (!numbers.includes(line.number)) numbers.push(line.number)
             }
@@ -78,7 +79,7 @@ function collectAccountNumbers(definition: ScenarioDefinition): string[] {
 
 export const scenarioEntries: ScenarioEntry[] = Object.values(scenarioCatalog).map((definition) => ({
     id: definition.slug,
-    path: `/documentation/comptabilité/scénarios/${definition.slug}`,
+    path: `/documentation/comptabilité/ressources/scénarios/${definition.slug}`,
     title: definition.title,
     description: definition.description,
     examples: buildExamples(definition),

@@ -47,6 +47,7 @@ Definies dans le service `api` du fichier `.workflows/dev/compose.yml`.
 | `CORS_ORIGIN` | `string` | Origines autorisees (separees par virgule) | `http://localhost:5173` |
 | `COOKIES_DOMAIN` | `string` | Domaine des cookies | `localhost` |
 | `COOKIES_KEY` | `string` | Cle secrete pour signer les cookies (min 32 chars) | `your-super-secret-key-min-32-characters-long` |
+| `USER_SESSION_COOKIE_MAX_AGE` | `number` | Duree de vie des cookies de session (en secondes, defaut 1 an) | `31536000` |
 
 ### URLs des services
 
@@ -276,6 +277,7 @@ environment:
   CORS_ORIGIN: localhost
   COOKIES_DOMAIN: localhost
   COOKIES_KEY: development-secret-key-change-in-production-min-32-chars
+  USER_SESSION_COOKIE_MAX_AGE: "31536000"
   API_BASE_URL: "http://localhost:3000"
   WEBSITE_BASE_URL: "http://localhost:5173"
   SQL_DATABASE_URL: "postgres://postgres:admin@localhost:5432/default"
@@ -299,6 +301,7 @@ PORT=3000
 CORS_ORIGIN=https://your-domain.com
 COOKIES_DOMAIN=your-domain.com
 COOKIES_KEY=generate-a-strong-random-key-here-minimum-32-characters
+USER_SESSION_COOKIE_MAX_AGE=31536000
 
 API_BASE_URL=https://api.your-domain.com
 WEBSITE_BASE_URL=https://your-domain.com

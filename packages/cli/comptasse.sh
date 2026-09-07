@@ -510,6 +510,8 @@ _cmd_entries() {
         create)    _entries_create "$@" ;;    update)    _entries_update "$@" ;;
         duplicate) _entries_duplicate "$@" ;; reverse)   _entries_reverse "$@" ;;
         delete)    _entries_delete "$@" ;;    compute)   _entries_compute "$@" ;;
+        missing-attachments) _entries_missing_attachments "$@" ;;
+        non-balanced)        _entries_non_balanced "$@" ;;
         lines)     _cmd_entry_lines "$@" ;;   tags)      _cmd_entry_tags "$@" ;;
         *) _die "comptasse entries: unknown subcommand '$subcmd'" ;;
     esac
@@ -583,6 +585,22 @@ _entries_compute() {
     while [ $# -gt 0 ]; do case "$1" in --year) year="$2"; shift ;; -*) _die "Unknown: $1" ;; *) id="$1" ;; esac; shift; done
     [ -n "$id" ] && [ -n "$year" ] || _die "Usage: comptasse entries compute <idEntry> --year <id>"
     _require_cfg; _api POST "$(_entries_base "$year")/$id/compute"
+}
+
+_entries_missing_attachments() {
+    year=''
+    while [ $# -gt 0 ]; do case "$1" in --year) year="$2"; shift ;; *) _die "Unknown: $1" ;; esac; shift; done
+    [ -n "$year" ] || _die "--year is required"
+    _require_cfg; _jbody_reset; _jstr idYear "$year"
+    _api POST "$(_entries_base "$year")/audit/missing-attachments" "$(_jbody)"
+}
+
+_entries_non_balanced() {
+    year=''
+    while [ $# -gt 0 ]; do case "$1" in --year) year="$2"; shift ;; *) _die "Unknown: $1" ;; esac; shift; done
+    [ -n "$year" ] || _die "--year is required"
+    _require_cfg; _jbody_reset; _jstr idYear "$year"
+    _api POST "$(_entries_base "$year")/audit/non-balanced" "$(_jbody)"
 }
 
 # ── entries lines ─────────────────────────────────────────────────────────────

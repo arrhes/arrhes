@@ -71,6 +71,7 @@ services:
       CORS_ORIGIN: http://localhost:5173
       COOKIES_DOMAIN: localhost
       COOKIES_KEY: development-secret-key-change-in-production-min-32-chars
+      USER_SESSION_COOKIE_MAX_AGE: "31536000"
       API_BASE_URL: http://localhost:3000
       WEBSITE_BASE_URL: http://localhost:5173
       DASHBOARD_BASE_URL: http://localhost:5174

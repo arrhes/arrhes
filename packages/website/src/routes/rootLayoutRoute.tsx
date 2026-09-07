@@ -130,7 +130,12 @@ export const rootLayoutRoute = createRootRouteWithContext<{
                   : `${rawTitle} - ${SITE_NAME}`
         const description = matchWithDescription?.context.description || DEFAULT_DESCRIPTION
         const robots = matchWithRobots?.context.robots
-        const canonicalUrl = `${BASE_URL}${pathname}`
+        // Canonicals must match the sitemap exactly: sitemap/prerendered URLs
+        // carry no trailing slash.  Without this normalization, a visit to
+        // /page/ makes React rewrite the canonical to /page/ and Google
+        // reports "Google chose a different canonical than the user".
+        const canonicalPath = pathname === "/" ? "/" : pathname.replace(/\/+$/, "")
+        const canonicalUrl = encodeURI(`${BASE_URL}${canonicalPath}`)
         const isHomePage = pathname === "/"
         const isDocPage = pathname.startsWith("/documentation")
 

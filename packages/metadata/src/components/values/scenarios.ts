@@ -12,11 +12,24 @@ import { numericSchema } from "../schemas/numericSchema.js"
  * resolved to the target year's chart at execution time.
  */
 
+export type ScenarioReportFlags = {
+    isComputedForJournalReport: boolean
+    isComputedForLedgerReport: boolean
+    isComputedForBalanceReport: boolean
+    isComputedForBalanceSheetReport: boolean
+    isComputedForIncomeStatementReport: boolean
+}
+
 export type ScenarioLine = {
     number: string
     label: string
     debit: string
     credit: string
+    /**
+     * Optional overrides applied to the report flags persisted with the entry
+     * lines. Unspecified flags default to true (every report enabled).
+     */
+    reportFlags?: Partial<ScenarioReportFlags>
 }
 
 export type ScenarioEntryDraft = {
@@ -24,9 +37,24 @@ export type ScenarioEntryDraft = {
     lines: ScenarioLine[]
 }
 
-export type ScenarioDocExample<TParams> = {
+/**
+ * Algebraic balance (debit - credit) of a single account, consumed by
+ * balance-driven scenarios (`mode: "balances"`).
+ */
+export type ScenarioAccountBalance = {
+    /** PCG account number */
+    number: string
+    label: string
+    balance: number
+}
+
+export type ScenarioMode = "params" | "balances"
+
+export type ScenarioDocExample = {
     description: string
-    params: TParams
+    params: Record<string, unknown>
+    /** Sample account balances, used by balances-mode scenarios */
+    balances?: ScenarioAccountBalance[]
 }
 
 export type ScenarioParamDescription = {
@@ -41,12 +69,22 @@ export type ScenarioDefinition = {
     slug: string
     title: string
     description: string
+    mode: ScenarioMode
+    /**
+     * Balances-mode only: where the account balances are read from.
+     * - "year": income-statement accounts of the target year (clôture)
+     * - "previousYear": balance-sheet accounts of the previous year (à-nouveaux)
+     */
+    balancesSource?: "year" | "previousYear"
     paramsSchema: v.ObjectSchema<Record<string, v.GenericSchema>, undefined>
-    docExamples: Array<{
-        description: string
-        params: Record<string, unknown>
-    }>
-    buildEntries: (params: Record<string, unknown>) => ScenarioEntryDraft[]
+    docExamples: ScenarioDocExample[]
+    /** Params-mode only */
+    buildEntries?: (params: Record<string, unknown>) => ScenarioEntryDraft[]
+    /** Balances-mode only */
+    buildEntriesFromBalances?: (
+        balances: ScenarioAccountBalance[],
+        params: Record<string, unknown>,
+    ) => ScenarioEntryDraft[]
 }
 
 function money(value: number): string {
@@ -69,6 +107,10 @@ function line(number: string, label: string, debit = 0, credit = 0): ScenarioLin
 const amountSchema = numericSchema
 const optionalString = (fallback?: string) =>
     fallback === undefined ? v.optional(v.string()) : v.optional(v.string(), fallback)
+
+/** Idempotency keys / slugs of the year-end scenarios, shared with the API endpoints. */
+export const ouvertureScenarioSlug = "ouverture-exercice"
+export const clotureScenarioSlug = "cloture-exercice"
 
 function paymentModeSchema(): v.GenericSchema {
     return v.optional(
@@ -125,20 +167,64 @@ function defineScenario<const TSchema extends v.ObjectSchema<Record<string, v.Ge
     title: string
     description: string
     paramsSchema: TSchema
-    docExamples: Array<{
-        description: string
-        params: Record<string, unknown>
-    }>
+    docExamples: ScenarioDocExample[]
     buildEntries: (params: v.InferOutput<TSchema>) => ScenarioEntryDraft[]
 }): ScenarioDefinition {
     return {
         slug: definition.slug,
         title: definition.title,
         description: definition.description,
+        mode: "params",
         paramsSchema: definition.paramsSchema,
         docExamples: definition.docExamples,
         buildEntries: definition.buildEntries as ScenarioDefinition["buildEntries"],
     }
+}
+
+function defineBalancesScenario<
+    const TSchema extends v.ObjectSchema<Record<string, v.GenericSchema>, undefined>,
+>(definition: {
+    slug: string
+    title: string
+    description: string
+    balancesSource: "year" | "previousYear"
+    paramsSchema: TSchema
+    docExamples: ScenarioDocExample[]
+    buildEntriesFromBalances: (
+        balances: ScenarioAccountBalance[],
+        params: v.InferOutput<TSchema>,
+    ) => ScenarioEntryDraft[]
+}): ScenarioDefinition {
+    return {
+        slug: definition.slug,
+        title: definition.title,
+        description: definition.description,
+        mode: "balances",
+        balancesSource: definition.balancesSource,
+        paramsSchema: definition.paramsSchema,
+        docExamples: definition.docExamples,
+        buildEntriesFromBalances: definition.buildEntriesFromBalances as ScenarioDefinition["buildEntriesFromBalances"],
+    }
+}
+
+/**
+ * Builds the entry drafts for one documented example, whatever the scenario
+ * mode (params or balances).
+ */
+export function buildScenarioEntries(
+    definition: ScenarioDefinition,
+    example: ScenarioDocExample,
+): ScenarioEntryDraft[] {
+    if (definition.mode === "balances") {
+        if (definition.buildEntriesFromBalances === undefined) {
+            throw new Error(`Scenario ${definition.slug} is missing buildEntriesFromBalances`)
+        }
+        return definition.buildEntriesFromBalances(example.balances ?? [], example.params)
+    }
+    if (definition.buildEntries === undefined) {
+        throw new Error(`Scenario ${definition.slug} is missing buildEntries`)
+    }
+    return definition.buildEntries(example.params)
 }
 
 const vatRateSchema = v.optional(v.number("Le taux de TVA doit être un nombre"), 20)
@@ -1106,6 +1192,162 @@ export const scenarioCatalog: Record<string, ScenarioDefinition> = {
                         line("44566", "TVA sur autres biens et services", tva),
                         line(third, thirdLabel, 0, ht + tva),
                     ],
+                },
+            ]
+        },
+    }),
+    "cloture-exercice": defineBalancesScenario({
+        slug: "cloture-exercice",
+        title: "Clôture des comptes de gestion",
+        description:
+            "En fin d'exercice, les comptes de gestion (classes 6 et 7) sont soldés pour déterminer le résultat : chaque compte de charge au solde débiteur est crédité, chaque compte de produit au solde créditeur est débité. Le solde net — bénéfice ou perte — est porté au compte 120 (bénéfice) ou 129 (perte). Cette écriture ne clôture pas l'exercice lui-même : la clôture définitive relève de l'endpoint dédié (POST /years/:idYear/close).",
+        balancesSource: "year",
+        paramsSchema: v.object({
+            profitAccount: optionalString("120"),
+            lossAccount: optionalString("129"),
+        }),
+        docExamples: [
+            {
+                description:
+                    "Exercice bénéficiaire : charges 10 000 € (solde débiteur du 607), produits 15 000 € (solde créditeur du 707) — résultat de 5 000 € crédité au compte 120",
+                params: {},
+                balances: [
+                    {
+                        number: "607",
+                        label: "Achats de marchandises",
+                        balance: 10000,
+                    },
+                    {
+                        number: "707",
+                        label: "Ventes de marchandises",
+                        balance: -15000,
+                    },
+                ],
+            },
+            {
+                description:
+                    "Exercice déficitaire : charges 8 000 € (solde débiteur du 607), produits 6 500 € (solde créditeur du 706) — perte de 1 500 € débitée au compte 129",
+                params: {},
+                balances: [
+                    {
+                        number: "607",
+                        label: "Achats de marchandises",
+                        balance: 8000,
+                    },
+                    {
+                        number: "706",
+                        label: "Prestations de services",
+                        balance: -6500,
+                    },
+                ],
+            },
+        ],
+        buildEntriesFromBalances: (balances, params) => {
+            const closingLines: ScenarioLine[] = []
+            for (const balance of balances) {
+                if (Math.abs(balance.balance) < 0.005) continue
+                // Un compte au solde débiteur (charge) est crédité ; un compte
+                // au solde créditeur (produit) est débité.
+                closingLines.push(
+                    balance.balance > 0
+                        ? line(balance.number, "Solde du compte", 0, balance.balance)
+                        : line(balance.number, "Solde du compte", -balance.balance, 0),
+                )
+            }
+            if (closingLines.length === 0) {
+                return []
+            }
+            const totalDebit = closingLines.reduce((sum, l) => sum + Number(l.debit), 0)
+            const totalCredit = closingLines.reduce((sum, l) => sum + Number(l.credit), 0)
+            const algebraicResult = totalDebit - totalCredit
+            const profitAccount = String(params.profitAccount ?? "120")
+            const lossAccount = String(params.lossAccount ?? "129")
+            const closingFlags = {
+                isComputedForIncomeStatementReport: false,
+            }
+            return [
+                {
+                    label: "Solde des comptes de gestion",
+                    lines: [
+                        ...closingLines.map((closingLine) => ({
+                            ...closingLine,
+                            reportFlags: closingFlags,
+                        })),
+                        ...(algebraicResult > 0
+                            ? [
+                                  {
+                                      ...line(profitAccount, "Résultat de l'exercice - bénéfice", 0, algebraicResult),
+                                      reportFlags: closingFlags,
+                                  },
+                              ]
+                            : algebraicResult < 0
+                              ? [
+                                    {
+                                        ...line(lossAccount, "Résultat de l'exercice - perte", -algebraicResult, 0),
+                                        reportFlags: closingFlags,
+                                    },
+                                ]
+                              : []),
+                    ],
+                },
+            ]
+        },
+    }),
+    "ouverture-exercice": defineBalancesScenario({
+        slug: "ouverture-exercice",
+        title: "À-nouveaux (ouverture du nouvel exercice)",
+        description:
+            "À l'ouverture d'un nouvel exercice, les soldes de bilan de l'exercice précédent sont reportés à l'identique : les comptes d'actif au solde débiteur sont débités, les comptes de passif au solde créditeur sont crédités. Le compte de résultat de l'exercice précédent (120/129) doit avoir été soldé au préalable (clôture des comptes de gestion), faute de quoi l'écriture est refusée. L'écriture est passée dans le journal À-nouveaux (AN) à la date d'ouverture de l'exercice.",
+        balancesSource: "previousYear",
+        paramsSchema: v.object({}),
+        docExamples: [
+            {
+                description:
+                    "Report du bilan précédent : banque 10 000 € (débit), capital 5 000 € (crédit), emprunt 5 000 € (crédit)",
+                params: {},
+                balances: [
+                    {
+                        number: "512",
+                        label: "Banques",
+                        balance: 10000,
+                    },
+                    {
+                        number: "101",
+                        label: "Capital",
+                        balance: -5000,
+                    },
+                    {
+                        number: "164",
+                        label: "Emprunts auprès des établissements de crédit",
+                        balance: -5000,
+                    },
+                ],
+            },
+        ],
+        buildEntriesFromBalances: (balances) => {
+            const openingLines: ScenarioLine[] = []
+            for (const balance of balances) {
+                if (Math.abs(balance.balance) < 0.005) continue
+                // Un solde débiteur est rétabli au débit, un solde créditeur au
+                // crédit : les soldes de bilan sont reportés à l'identique.
+                openingLines.push(
+                    balance.balance > 0
+                        ? line(balance.number, "Report du compte", balance.balance, 0)
+                        : line(balance.number, "Report du compte", 0, -balance.balance),
+                )
+            }
+            if (openingLines.length === 0) {
+                return []
+            }
+            return [
+                {
+                    label: "Report du bilan de l'exercice précédent",
+                    lines: openingLines.map((openingLine) => ({
+                        ...openingLine,
+                        reportFlags: {
+                            isComputedForIncomeStatementReport: false,
+                        },
+                    })),
                 },
             ]
         },

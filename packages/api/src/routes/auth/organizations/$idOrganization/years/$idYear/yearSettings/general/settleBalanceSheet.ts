@@ -11,6 +11,13 @@ import { insertMany } from "../../../../../../../../utilities/sql/insertMany.js"
 import { insertOne } from "../../../../../../../../utilities/sql/insertOne.js"
 import { selectMany } from "../../../../../../../../utilities/sql/selectMany.js"
 import { selectOne } from "../../../../../../../../utilities/sql/selectOne.js"
+import { selectBalancesByIdAccount } from "../../../../../../../../utilities/scenarios/accountBalances.js"
+
+/**
+ * Idempotency key of the generated balance-sheet closing entry. Used by the
+ * key-based replacement below (never by a label match, which can drift).
+ */
+const SETTLE_BALANCE_SHEET_KEY = "settle-balance-sheet"
 
 export const settleBalanceSheetRoute = apiFactory
     .createApp()
@@ -33,7 +40,10 @@ export const settleBalanceSheetRoute = apiFactory
         })
 
         await c.var.clients.sql.transaction(async (tx) => {
-            // Delete any previous balance-sheet closing entries for this journal+year
+            // Idempotency: replace the previously generated balance-sheet
+            // closing entry for this year + journal (matched by idempotency
+            // key, not by journal contents, so manually created entries in
+            // the same journal are preserved).
             await deleteMany({
                 database: tx,
                 table: models.entry,
@@ -42,18 +52,7 @@ export const settleBalanceSheetRoute = apiFactory
                         eq(table.idOrganization, idOrganization),
                         eq(table.idYear, body.idYear),
                         eq(table.idJournal, body.idJournalClosing),
-                    ),
-            })
-
-            // Fetch all balance-sheet entry lines for this year
-            const entryLines = await selectMany({
-                database: tx,
-                table: models.entryLine,
-                where: (table) =>
-                    and(
-                        eq(table.idOrganization, idOrganization),
-                        eq(table.idYear, body.idYear),
-                        eq(table.isComputedForBalanceSheetReport, true),
+                        eq(table.idempotencyKey, SETTLE_BALANCE_SHEET_KEY),
                     ),
             })
 
@@ -69,19 +68,21 @@ export const settleBalanceSheetRoute = apiFactory
                     ),
             })
 
+            // Aggregate balance-sheet balances per account (lines flagged for
+            // the balance sheet report exclude the generated entry itself,
+            // making this idempotent).
+            const balanceByIdAccount = await selectBalancesByIdAccount({
+                database: tx,
+                idOrganization,
+                idYear: body.idYear,
+                lineFlag: "isComputedForBalanceSheetReport",
+            })
+
             // Build closing lines: reverse each account balance (skip class/2-digit accounts)
             const sheetLines: Array<typeof models.entryLine.$inferInsert> = []
 
             for (const account of accounts) {
-                    let totalDebit = 0
-                let totalCredit = 0
-                for (const line of entryLines) {
-                    if (line.idAccount !== account.id) continue
-                    totalDebit += Number(line.debit)
-                    totalCredit += Number(line.credit)
-                }
-
-                const algebraicBalance = totalDebit - totalCredit
+                const algebraicBalance = balanceByIdAccount.get(account.id) ?? 0
                 if (Math.abs(algebraicBalance) < 0.01) continue
 
                 sheetLines.push({
@@ -123,6 +124,7 @@ export const settleBalanceSheetRoute = apiFactory
                     idYear: body.idYear,
                     idJournal: body.idJournalClosing,
                     idFile: null,
+                    idempotencyKey: SETTLE_BALANCE_SHEET_KEY,
                     label: "Solde des comptes de bilan",
                     date: year.endingAt,
                     createdAt: new Date().toISOString(),

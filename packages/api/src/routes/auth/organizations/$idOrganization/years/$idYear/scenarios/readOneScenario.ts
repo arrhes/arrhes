@@ -1,4 +1,5 @@
 import {
+    buildScenarioEntries,
     describeScenarioParams,
     getScenarioDefinition,
     readOneScenarioRouteDefinition,
@@ -25,7 +26,7 @@ export const readOneScenarioRoute = registerRoute(readOneScenarioRouteDefinition
             externalMessage: "Scénario inconnu",
         })
     }
-    const sampleParams = definition.docExamples[0]?.params ?? {}
+    const sampleExample = definition.docExamples[0]
     return response({
         context: c,
         statusCode: 200,
@@ -36,8 +37,9 @@ export const readOneScenarioRoute = registerRoute(readOneScenarioRouteDefinition
             description: definition.description,
             params: describeScenarioParams(definition.paramsSchema),
             sample: {
-                params: sampleParams,
-                entries: definition.buildEntries(sampleParams),
+                params: sampleExample?.params ?? {},
+                balances: sampleExample?.balances,
+                entries: sampleExample === undefined ? [] : buildScenarioEntries(definition, sampleExample),
             },
         },
     })

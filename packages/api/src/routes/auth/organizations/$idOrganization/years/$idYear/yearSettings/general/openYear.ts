@@ -1,4 +1,4 @@
-import { generateId, models, openYearRouteDefinition } from "@comptasse/application-metadata"
+import { generateId, models, openYearRouteDefinition, ouvertureScenarioSlug } from "@comptasse/application-metadata"
 import { and, eq } from "drizzle-orm"
 import { checkAuthMiddleware } from "../../../../../../../../middlewares/checkAuthMiddleware.js"
 import { requireOrganizationMiddleware } from "../../../../../../../../middlewares/requireOrganizationMiddleware.js"
@@ -6,6 +6,7 @@ import { validateBodyMiddleware } from "../../../../../../../../middlewares/vali
 import { Exception } from "../../../../../../../../utilities/exception.js"
 import { registerRoute } from "../../../../../../../../utilities/registerRoute.js"
 import { response } from "../../../../../../../../utilities/response.js"
+import { selectBalancesByIdAccount } from "../../../../../../../../utilities/scenarios/accountBalances.js"
 import { deleteMany } from "../../../../../../../../utilities/sql/deleteMany.js"
 import { insertMany } from "../../../../../../../../utilities/sql/insertMany.js"
 import { insertOne } from "../../../../../../../../utilities/sql/insertOne.js"
@@ -81,26 +82,12 @@ export const openYearRoute = registerRoute(openYearRouteDefinition, async (c) =>
         ]),
     )
 
-    const previousLines = await selectMany({
+    const previousLinesBalances = await selectBalancesByIdAccount({
         database: c.var.clients.sql,
-        table: models.entryLine,
-        where: (table) =>
-            and(
-                eq(table.idOrganization, idOrganization),
-                eq(table.idYear, previousYear.id),
-                eq(table.isComputedForBalanceSheetReport, true),
-            ),
-        limit: 100_000,
+        idOrganization,
+        idYear: previousYear.id,
+        lineFlag: "isComputedForBalanceSheetReport",
     })
-
-    // Aggregate algebraic balances per account (previous year).
-    const balanceByIdAccount = new Map<string, number>()
-    for (const line of previousLines) {
-        balanceByIdAccount.set(
-            line.idAccount,
-            (balanceByIdAccount.get(line.idAccount) ?? 0) + Number(line.debit) - Number(line.credit),
-        )
-    }
 
     // Refuse when the previous income statement has activity but its result
     // (compte 120 / 129) has not been booked by settle-income-statement.
@@ -113,12 +100,12 @@ export const openYearRoute = registerRoute(openYearRouteDefinition, async (c) =>
     const incomeAccountIds = new Set(
         previousAccounts.filter((account) => account.type === "income-statement").map((account) => account.id),
     )
-    const result120 = balanceByIdAccount.get(accountIdByNumber.get("120") ?? "") ?? 0
-    const result129 = balanceByIdAccount.get(accountIdByNumber.get("129") ?? "") ?? 0
+    const result120 = previousLinesBalances.get(accountIdByNumber.get("120") ?? "") ?? 0
+    const result129 = previousLinesBalances.get(accountIdByNumber.get("129") ?? "") ?? 0
     const hasResultBooked = Math.abs(result120) > 0.01 || Math.abs(result129) > 0.01
     const hasIncomeActivity = [
         ...incomeAccountIds,
-    ].some((id) => Math.abs(balanceByIdAccount.get(id) ?? 0) > 0.01)
+    ].some((id) => Math.abs(previousLinesBalances.get(id) ?? 0) > 0.01)
     if (hasIncomeActivity && !hasResultBooked) {
         throw new Exception({
             statusCode: 400,
@@ -138,7 +125,7 @@ export const openYearRoute = registerRoute(openYearRouteDefinition, async (c) =>
 
     for (const account of previousAccounts) {
         if (account.type !== "balance-sheet") continue
-        const algebraic = balanceByIdAccount.get(account.id) ?? 0
+        const algebraic = previousLinesBalances.get(account.id) ?? 0
         if (Math.abs(algebraic) < 0.01) continue
 
         const targetId = targetAccountIdByNumber.get(account.number)
@@ -147,10 +134,13 @@ export const openYearRoute = registerRoute(openYearRouteDefinition, async (c) =>
             continue
         }
 
+        // A debit balance (algebraic > 0) must be re-established as a debit
+        // line in the opening entry, and a credit balance as a credit line —
+        // the opposite of the settle direction, which zeroes the account.
         openingLines.push({
             idAccount: targetId,
-            debit: algebraic < 0 ? (-algebraic).toFixed(2) : "0.00",
-            credit: algebraic > 0 ? algebraic.toFixed(2) : "0.00",
+            debit: algebraic > 0 ? algebraic.toFixed(2) : "0.00",
+            credit: algebraic < 0 ? (-algebraic).toFixed(2) : "0.00",
         })
     }
 
@@ -171,8 +161,8 @@ export const openYearRoute = registerRoute(openYearRouteDefinition, async (c) =>
     }
 
     await c.var.clients.sql.transaction(async (tx) => {
-        // Idempotency: replace a previously generated opening entry for this
-        // journal carrying the opening label.
+        // Idempotency: replace the previously generated opening entry for this
+        // year + journal (matched by idempotency key, not by label).
         await deleteMany({
             database: tx,
             table: models.entry,
@@ -181,7 +171,7 @@ export const openYearRoute = registerRoute(openYearRouteDefinition, async (c) =>
                     eq(table.idOrganization, idOrganization),
                     eq(table.idYear, body.idYear),
                     eq(table.idJournal, body.idJournalOpening),
-                    eq(table.label, OPENING_LABEL),
+                    eq(table.idempotencyKey, ouvertureScenarioSlug),
                 ),
         })
 
@@ -194,6 +184,7 @@ export const openYearRoute = registerRoute(openYearRouteDefinition, async (c) =>
                 idYear: body.idYear,
                 idJournal: body.idJournalOpening,
                 idFile: null,
+                idempotencyKey: ouvertureScenarioSlug,
                 label: OPENING_LABEL,
                 date: year.startingAt,
                 createdAt: new Date().toISOString(),

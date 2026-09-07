@@ -1,5 +1,7 @@
-import { generateId, models, type ScenarioDefinition } from "@comptasse/application-metadata"
+import { generateId, models, type ScenarioReportFlags } from "@comptasse/application-metadata"
+import { and, eq } from "drizzle-orm"
 import { Exception } from "../exception.js"
+import { deleteMany } from "../sql/deleteMany.js"
 import { insertMany } from "../sql/insertMany.js"
 import { insertOne } from "../sql/insertOne.js"
 
@@ -15,6 +17,7 @@ export type ScenarioLineDraft = {
     label: string
     debit: string
     credit: string
+    reportFlags?: Partial<ScenarioReportFlags>
 }
 
 export type ScenarioEntryDraft = {
@@ -78,18 +81,27 @@ export async function createScenarioEntries(parameters: {
     idOrganization: string
     idYear: string
     userId: string
-    definition: ScenarioDefinition
-    params: Record<string, unknown>
+    drafts: ScenarioEntryDraft[]
     idJournal: string
     date?: string | null
     accounts: ScenarioAccount[]
+    /**
+     * Written to the created entries so that a later idempotent run can
+     * replace them. Required when replaceExisting is true.
+     */
+    idempotencyKey?: string | null
+    /**
+     * Deletes the entries previously generated for the same idempotency key
+     * in the same year + journal before inserting (idempotent replay).
+     */
+    replaceExisting?: boolean
 }): Promise<
     Array<{
         entry: unknown
         lines: unknown[]
     }>
 > {
-    const drafts: ScenarioEntryDraft[] = parameters.definition.buildEntries(parameters.params)
+    const drafts = parameters.drafts
     if (drafts.length === 0) {
         throw new Exception({
             statusCode: 400,
@@ -120,6 +132,21 @@ export async function createScenarioEntries(parameters: {
     let lineCursor = 0
 
     await parameters.database.transaction(async (tx) => {
+        const idempotencyKey = parameters.idempotencyKey
+        if (parameters.replaceExisting === true && typeof idempotencyKey === "string") {
+            await deleteMany({
+                database: tx,
+                table: models.entry,
+                where: (table) =>
+                    and(
+                        eq(table.idOrganization, parameters.idOrganization),
+                        eq(table.idYear, parameters.idYear),
+                        eq(table.idJournal, parameters.idJournal),
+                        eq(table.idempotencyKey, idempotencyKey),
+                    ),
+            })
+        }
+
         for (const draft of drafts) {
             const entry = await insertOne({
                 database: tx,
@@ -130,6 +157,7 @@ export async function createScenarioEntries(parameters: {
                     idYear: parameters.idYear,
                     idJournal: parameters.idJournal,
                     idFile: null,
+                    idempotencyKey: parameters.idempotencyKey ?? null,
                     label: draft.label,
                     date,
                     createdAt: new Date().toISOString(),
@@ -149,11 +177,11 @@ export async function createScenarioEntries(parameters: {
                 idYear: parameters.idYear,
                 idEntry: entry.id,
                 idAccount,
-                isComputedForJournalReport: true,
-                isComputedForLedgerReport: true,
-                isComputedForBalanceReport: true,
-                isComputedForBalanceSheetReport: true,
-                isComputedForIncomeStatementReport: true,
+                isComputedForJournalReport: line.reportFlags?.isComputedForJournalReport ?? true,
+                isComputedForLedgerReport: line.reportFlags?.isComputedForLedgerReport ?? true,
+                isComputedForBalanceReport: line.reportFlags?.isComputedForBalanceReport ?? true,
+                isComputedForBalanceSheetReport: line.reportFlags?.isComputedForBalanceSheetReport ?? true,
+                isComputedForIncomeStatementReport: line.reportFlags?.isComputedForIncomeStatementReport ?? true,
                 label: line.label,
                 debit: line.debit,
                 credit: line.credit,

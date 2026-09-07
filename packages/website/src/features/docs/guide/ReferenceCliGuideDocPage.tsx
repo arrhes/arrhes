@@ -205,6 +205,14 @@ export function ReferenceCliGuideDocPage() {
                             "Supprime une écriture",
                         ],
                         [
+                            <DocCode key="0">{"comptasse entries missing-attachments --year <id>"}</DocCode>,
+                            "Liste les écritures sans pièce justificative (audit)",
+                        ],
+                        [
+                            <DocCode key="0">{"comptasse entries non-balanced --year <id>"}</DocCode>,
+                            "Liste les écritures déséquilibrées avec totaux et écart (audit)",
+                        ],
+                        [
                             <DocCode key="0">
                                 {"comptasse entries lines create <idEntry> --year <id> --account <id>"}
                             </DocCode>,

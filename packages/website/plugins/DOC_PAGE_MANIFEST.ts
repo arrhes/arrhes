@@ -203,6 +203,13 @@ export const DOC_PAGE_MANIFEST: DocPageManifestEntry[] = [
     },
     // ── Guide / Agent ─────────────────────────────────────────────────────────
     {
+        path: "/documentation/guide/agent/démarrer",
+        file: "src/features/docs/guide/AgentQuickstartGuideDocPage.tsx",
+        section: "Guide",
+        navGroup: "Agent",
+        navLabel: "Démarrer",
+    },
+    {
         path: "/documentation/guide/agent",
         file: "src/features/docs/guide/AgentSkillsDocPage.tsx",
         section: "Guide",

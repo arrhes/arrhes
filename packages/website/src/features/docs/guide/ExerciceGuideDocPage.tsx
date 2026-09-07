@@ -50,6 +50,30 @@ export function ExerciceGuideDocPage() {
                 </DocTip>
             </DocSection>
 
+            <DocSection title="Workflow de fin d'exercice">
+                <DocParagraph>
+                    Le passage d'un exercice au suivant suit un ordre précis. Les étapes 1 et 2 peuvent être réalisées
+                    soit via les endpoints dédiés, soit via les scénarios comptables correspondants :
+                </DocParagraph>
+                <DocList
+                    variant="ordered"
+                    items={[
+                        "Clôturer les comptes de gestion : solde des charges et produits vers le compte de résultat — endpoint POST .../years/:idYear/settle-income-statement ou scénario cloture-exercice",
+                        "Générer les à-nouveaux : report des soldes de bilan dans l'exercice suivant — endpoint POST .../years/:idYear/open (sur le nouvel exercice) ou scénario ouverture-exercice",
+                        "Affecter le résultat : réserve légale, dividendes, report à nouveau — scénario affectation-resultat-benefice",
+                        "Clôturer l'exercice : POST .../years/:idYear/close (ou comptasse years close) — verrouille définitivement les écritures",
+                    ]}
+                />
+                <DocTip variant="warning">
+                    Les scénarios <DocCode>cloture-exercice</DocCode> et <DocCode>ouverture-exercice</DocCode> génèrent
+                    des écritures mais ne clôturent jamais l'exercice : la clôture définitive relève exclusivement de
+                    l'endpoint <DocCode>POST .../years/:idYear/close</DocCode>. Par défaut, ces scénarios sont
+                    idempotents : relancer un scénario remplace l'écriture précédemment générée (même journal) au lieu
+                    d'en créer une copie. Passez <DocCode>isIdempotent: false</DocCode> pour forcer une nouvelle
+                    écriture.
+                </DocTip>
+            </DocSection>
+
             <DocSection title="Implémentation">
                 <DocImplementationTabs
                     dashboard={

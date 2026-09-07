@@ -32,6 +32,11 @@ export function ReferenceApiGuideDocPage() {
                     via le token d'authentification ou l'en-tête <DocCode>X-Organization-Id</DocCode>, et non dans le
                     corps de la requête.
                 </DocTip>
+                <DocParagraph>
+                    Un catalogue machine-readable de toutes les routes est exposé publiquement sur{" "}
+                    <DocCode>GET /routes</DocCode> : méthode, chemin, nom et champs attendus (corps et réponse) pour
+                    chaque endpoint, dérivés automatiquement des schémas Valibot.
+                </DocParagraph>
             </DocSection>
 
             <DocSection title="Authentification">
@@ -97,8 +102,8 @@ export function ReferenceApiGuideDocPage() {
 
             <DocSection title="Catégories de routes">
                 <DocParagraph>
-                    L'API expose 111 routes protégées réparties en 21 catégories. Le tableau ci-dessous résume chaque
-                    catégorie :
+                    L'API expose 120 routes métier réparties en 22 catégories, plus le catalogue{" "}
+                    <DocCode>GET /routes</DocCode>. Le tableau ci-dessous résume chaque catégorie :
                 </DocParagraph>
                 <DocTable
                     headers={[
@@ -110,31 +115,31 @@ export function ReferenceApiGuideDocPage() {
                     rows={[
                         [
                             "1",
-                            "Organisations",
-                            "3",
-                            "Utilisateur",
+                            "Authentification",
+                            "4",
+                            "Public",
                         ],
                         [
                             "2",
-                            "Paramètres d'organisation",
-                            "3",
-                            "Organisation",
+                            "Utilisateur",
+                            "5",
+                            "Utilisateur",
                         ],
                         [
                             "3",
-                            "Clés API",
-                            "3",
-                            "Organisation",
+                            "Organisations",
+                            "6",
+                            "Utilisateur",
                         ],
                         [
                             "4",
-                            "Abonnement et paiements",
-                            "17",
+                            "Paramètres d'organisation",
+                            "1",
                             "Organisation",
                         ],
                         [
                             "5",
-                            "Utilisateurs d'organisation",
+                            "Membres",
                             "5",
                             "Organisation",
                         ],
@@ -146,50 +151,50 @@ export function ReferenceApiGuideDocPage() {
                         ],
                         [
                             "7",
-                            "Comptes",
-                            "5",
+                            "Scénarios",
+                            "3",
                             "Exercice",
                         ],
                         [
                             "8",
-                            "Journaux",
-                            "5",
+                            "Comptes",
+                            "6",
                             "Exercice",
                         ],
                         [
                             "9",
-                            "Bilans",
-                            "5",
+                            "Journaux",
+                            "6",
                             "Exercice",
                         ],
                         [
                             "10",
-                            "Comptes de résultat",
-                            "5",
+                            "Bilans",
+                            "7",
                             "Exercice",
                         ],
                         [
                             "11",
-                            "Calculs",
-                            "5",
+                            "Comptes de résultat",
+                            "7",
                             "Exercice",
                         ],
                         [
                             "12",
-                            "Calculs - comptes de résultat",
-                            "5",
+                            "Calculs",
+                            "7",
                             "Exercice",
                         ],
                         [
                             "13",
-                            "Libellés d'écriture",
-                            "5",
+                            "Calculs - comptes de résultat",
+                            "4",
                             "Exercice",
                         ],
                         [
                             "14",
                             "Écritures",
-                            "10",
+                            "11",
                             "Exercice",
                         ],
                         [
@@ -201,41 +206,54 @@ export function ReferenceApiGuideDocPage() {
                         [
                             "16",
                             "Tags d'écriture",
-                            "2",
+                            "5",
                             "Exercice",
                         ],
                         [
                             "17",
+                            "Étiquettes d'écriture",
+                            "3",
+                            "Exercice",
+                        ],
+                        [
+                            "18",
                             "Fichiers",
                             "7",
                             "Exercice",
                         ],
                         [
-                            "18",
+                            "19",
                             "Dossiers",
                             "5",
                             "Exercice",
                         ],
                         [
-                            "19",
-                            "Rapports XBRL",
-                            "2",
+                            "20",
+                            "Exports",
+                            "3",
                             "Exercice",
                         ],
                         [
-                            "20",
+                            "21",
                             "Articles d'inventaire",
                             "5",
                             "Exercice",
                         ],
                         [
-                            "21",
+                            "22",
                             "Mouvements d'inventaire",
                             "5",
                             "Exercice",
                         ],
                     ]}
                 />
+                <DocTip variant="info">
+                    Les endpoints d'audit <DocCode>POST .../entries/audit/missing-attachments</DocCode> et{" "}
+                    <DocCode>POST .../entries/audit/non-balanced</DocCode> listent respectivement les écritures sans
+                    pièce justificative et les écritures déséquilibrées. Les scénarios comptables (catégorie 7) génèrent
+                    des écritures prêtes à l'emploi : consultez la page{" "}
+                    <DocLink to="/documentation/comptabilité/ressources/scénarios">Scénarios</DocLink>.
+                </DocTip>
             </DocSection>
         </DocRoot>
     )

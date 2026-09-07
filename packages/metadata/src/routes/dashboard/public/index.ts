@@ -1,3 +1,4 @@
+export { readAllRoutesRouteDefinition } from "./readAllRoutes.js"
 export { resetPasswordRouteDefinition } from "./user/resetPassword.js"
 export { signInRouteDefinition } from "./user/signIn.js"
 export { signOutRouteDefinition } from "./user/signOut.js"

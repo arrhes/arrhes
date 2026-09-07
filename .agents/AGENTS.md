@@ -46,7 +46,21 @@ pnpm build       # Build all packages
 ### Agentic usage (external)
 - Comptasse does not ship a built-in AI agent
 - Users bring their own agent and interact with Comptasse via the REST API or CLI
-- API authentication is cookie-based (dashboard) or via user-level API keys
+- API authentication is cookie-based (signed session cookie obtained via `POST /auth/sign-in`); the organization is resolved from the URL path or the `X-Organization-Id` header
+- `GET /routes` (public, no auth) returns a machine-readable catalog of every endpoint with its body/return fields
+- Key agent-facing endpoints: `POST /organizations/:idOrganization/years/:idYear/scenarios/:scenario` (pre-built accounting entries, 22 scenarios), `POST .../entries/audit/missing-attachments`, `POST .../entries/audit/non-balanced`
+
+## Documentation for External Agents (served as Markdown)
+
+The website serves the full documentation as raw Markdown (append `.md` to any doc URL). Entry point for crawling:
+
+- Sommaire: `/documentation/sommaire.md` — complete navigation of every page
+- API reference: `/documentation/guide/référence-api.md` — conventions, error format, all 120 routes in 22 categories
+- Agent quickstart: `/documentation/guide/agent/démarrer.md` — auth, conventions, scenarios, year-end workflow
+- Scenarios catalog: `/documentation/comptabilité/ressources/scénarios.md` (index) and per-scenario pages `/documentation/comptabilité/ressources/scénarios/<slug>.md` (params, worked entries, execute snippet)
+- Chart of accounts: `/documentation/comptabilité/ressources/comptes/<number>.md`, glossary: `/documentation/comptabilité/ressources/glossaire/<term>.md`
+
+Year-end order: settle income statement (or `cloture-exercice` scenario) → opening entries in the new year (`ouverture-exercice` scenario or `POST /years/:idYear/open`) → result allocation (`affectation-resultat-benefice`) → close the year (`POST /years/:idYear/close` — the only operation that actually closes a year). Scenarios never close a year.
 
 ## Code Conventions
 
@@ -69,3 +83,4 @@ pnpm build       # Build all packages
 - [Development guide](docs/DEVELOPMENT.md)
 - [Architecture overview](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)
+- [Business model](docs/BUSINESS_MODEL.md)
